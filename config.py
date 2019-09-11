@@ -7,7 +7,7 @@ JMFIT_BX_FILE = 'Datasets/JMFIT_CASA_B_results.csv'
 JMFIT_SIZE_AX_FILE = 'Datasets/JMFIT_AX_all_res_mod.csv'
 JMFIT_SIZE_BX_FILE = 'Datasets/JMFIT_BX_all_res.csv'
 
-SP_CLASS_FILE = 'Spectral_shape_classf.xlsx'
+SP_CLASS_FILE = 'Datasets/Spectral_shape_classf.xlsx'
 
-SNR_AX_FILE = './New_casa_results/SNR_list_AX.csv'
-SNR_BX_FILE = './New_casa_results/SNR_list_BX.csv'
+SNR_AX_FILE = 'Datasets/SNR_list_AX.csv'
+SNR_BX_FILE = 'Datasets/SNR_list_BX.csv'
