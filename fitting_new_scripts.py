@@ -41,7 +41,7 @@ fprep = file_prep_utils()
 rmfit = radio_models_fits()
 atscat, atgcat, vla_ax_grp, vla_bx_grp = loadt.get_tabs()
 
-
+'''
 plots_dir = './Plots_all/'
 fitsdir_AX = '/Users/pallavipatil/Desktop/VLA/VLA-NewWork/AX/fitsfiles/'
 fitsdir_BX = '/Users/pallavipatil/Desktop/VLA/VLA-NewWork/BX/fitsfiles/'
@@ -51,12 +51,12 @@ dfsinfo = pd.read_excel(scan_info, 'Summary')
 scan_info.close()
 ax_list = pd.Series(dfsinfo['12B-217'])
 bx_list = pd.Series(dfsinfo['12A-064'])
-
+'''
 
 sp_class = loadt.get_sp_info()
 
-fitTab = ascii.read('GuessPar_Radiofits.csv', format='basic', delimiter=',')
-fitTab.add_index('Name')
+#fitTab = ascii.read('GuessPar_Radiofits.csv', format='basic', delimiter=',')
+#fitTab.add_index('Name')
 
 
 
