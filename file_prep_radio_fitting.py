@@ -10,9 +10,9 @@ import pandas as pd
 
 class load_tables:
     def __init__(self):
-        self.vladir = '/Users/pallavipatil/Desktop/VLA/'
-        self.workdir = '/Users/pallavipatil/Desktop/VLA/Radio_Fits_v2/'
-        self.newdir  = self.vladir+'NewWork/'
+        self.vladir = './Datasets'
+        self.workdir = './Datasets'
+        self.newdir  = './Datasets'
 
     
     def get_tabs(self):       
