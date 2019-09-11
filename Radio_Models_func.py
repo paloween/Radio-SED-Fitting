@@ -21,6 +21,7 @@ class RadioModelsFits:
         self.fit_res = []
         self.perr_res = []
         self.rchiq = None
+        self.model_name = 'PL'
 
     def power_law(self, nu, s0, alpha):
         return s0 * (nu) ** alpha
@@ -185,16 +186,16 @@ class RadioModelsFits:
             eflux_arr = np.append(eflux_arr, alpha[2])
         return nu_arr, flux_arr, eflux_arr
 
-    def generate_model(self, nu_arr, model_name, *pars):
+    def generate_model(self, nu_arr, *pars):
         mypars = pars
         nu_arr = np.array(nu_arr)
         model_lists = {'PL': self.power_law, 'CPL': self.curved_power,
                        'EFFA': self.EFFA_func, 'IFFA': self.IFFA_func,
                        'SSA': self.SSA_func, 'GCV': self.gen_curve_func}
-        if model_name not in model_lists.keys():
+        if self.model_name not in model_lists.keys():
             raise Exception('Invalid Model: Please check the model code')
 
-        model_func = model_lists[model_name]
+        model_func = model_lists[self.model_name]
         flux = np.copy(nu_arr)
         pnu_msk = tuple([nu_arr > 0])
         flux[pnu_msk] = model_func(nu_arr[pnu_msk], *mypars)
@@ -208,25 +209,23 @@ class RadioModelsFits:
         return flux
 
     def chi_sq_fit(self, nu_arr, flux_arr, eflux_arr, guess_pars, model_name):
+        self.model_name = model_name
         if guess_pars == None or len(guess_pars) == 0:
             s0 = flux_arr[np.argwhere(nu_arr == 1.4)]  # getting NVSS
             alpha = -1.0
             nu_t = np.mean(nu_arr[nu_arr > 0])
-            if model_name == 'PL':
+            if self.model_name == 'PL':
                 guess_pars = [s0, alpha]
             else:
                 guess_pars = [s0, alpha, nu_t]
         try:
             self.fit_res, cov1 = scipy.optimize.curve_fit(self.generate_model,
                                                           nu_arr, flux_arr,
-                                                          [model_name,
-                                                           guess_pars],
-                                                          eflux_arr)
+                                                           guess_pars,eflux_arr)
             self.perr_res = np.sqrt(np.diag(cov1))
         except:
             self.fit_res = [-999, -999, -999]
 
         chi_res = self.redchisq_calc(self.generate_model,
-                                     nu_arr, flux_arr, eflux_arr,
-                                     [self.fit_res, model_name])
+                                     nu_arr, flux_arr, eflux_arr,self.fit_res,)
         return self.fit_res, self.perr_res, chi_res
