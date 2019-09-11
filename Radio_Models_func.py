@@ -206,7 +206,7 @@ class radio_models_fits:
                 guess_pars = [s0, alpha, nu_t]
         try:
             self.fit_res,cov1 = scipy.optimize.curve_fit(self.generate_model,                                                        
-                                nu_arr, flux_arr, [guess_pars,model_name], eflux_arr)   
+                                nu_arr, flux_arr, [model_name, guess_pars], eflux_arr)   
             self.perr_res = np.sqrt(np.diag(cov1))
         except:
             self.fit_res = [-999,-999,-999]
