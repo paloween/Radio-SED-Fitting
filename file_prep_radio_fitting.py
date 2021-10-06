@@ -7,7 +7,8 @@ import numpy as np
 # import os
 from astropy.table import Table, join
 import pandas as pd
-
+import sys
+sys.path.insert(1,'../Radio-SED-Fitting')
 import config
 
 
@@ -15,15 +16,15 @@ class LoadTables:
     def __init__(self):
         self.atscat = Table.read(config.WISE_XMATCH_FILE)
         self.atgcat = Table.read(config.GLEAM_FILE)
-        vla_ax = Table.read(config.JMFIT_AX_FILE, format='csv',
+        self.vla_ax = Table.read(config.JMFIT_AX_FILE, format='csv',
                             delimiter=',')
-        vla_bx = Table.read(config.JMFIT_SIZE_BX_FILE, format='csv',
+        self.vla_bx = Table.read(config.JMFIT_BX_FILE, format='csv',
                             delimiter=',')
 
-        self.vla_ax_grp = vla_ax.group_by(keys='WISEname')
-        self.vla_bx_grp = vla_bx.group_by(keys='WISEname')
-        self.vla_ax_grp.add_index('WISEname')
-        self.vla_bx_grp.add_index('WISEname')
+        #self.vla_ax_grp = vla_ax.group_by(keys='WISEname')
+        #self.vla_bx_grp = vla_bx.group_by(keys='WISEname')
+        #self.vla_ax_grp.add_index('WISEname')
+        #self.vla_bx_grp.add_index('WISEname')
         self.atscat.add_index('WISEname')
         self.atgcat.add_index('WISEname')
 
@@ -37,9 +38,13 @@ class LoadTables:
                              keys='Source_name')
         self.sp_class = join(self.sp_class, snr_bx, join_type='left',
                              keys='Source_name')
-
+        
+        #Change on Feb 10
+        # Adding VCSS catalog
+        self.vcss_cat = Table.read(config.VLITE_FILE)
+        self.vcss_cat.add_index('Source_name')
     def get_tabs(self):
-        return self.atscat, self.atgcat, self.vla_ax_grp, self.vla_bx_grp
+        return self.atscat, self.atgcat, self.vla_ax, self.vla_bx
 
     def get_sp_info(self):
         return self.sp_class
@@ -49,20 +54,18 @@ class FilePrepUtils:
 
     def __init__(self):
 
-        self.arx_freqs = [1.4, 0.843, 0.365, 0.150, 0.074, 0.325, 0.352, 4.85,
-                          0.338]
-        self.arx_fcols = ['FNVSS', 'Fsumss', 'Ftexas', 'Ftgss', 'Fvlssr',
-                          'Fwenss', 'Fwish', 'Fgb6',
-                          'FVLITE_p']
-        self.arx_ecols = ['ENVSS', 'Esumss', 'Etexas', 'Etgss', 'Evlssr',
-                          'Ewenss', 'Ewish', 'Egb6',
-                          'EVLITE_p']
+        self.arx_freqs = [1.4, 1.4, 0.843,  0.150, 0.074, 0.325, 0.352, 4.85,
+                          0.338, 3.0]
+        self.arx_fcols = ['FNVSS', 'FPEAK', 'Fsumss', 'Ftgss', 'Fvlssr',
+                          'Speak_WENSS', 'Fwish', 'Fgb6', 'FVLITE_p', 'Total_flux']
+        self.arx_ecols = ['ENVSS', 'RMS','Esumss', 'Etgss', 'Evlssr',
+                          'Nse_WENSS', 'Ewish', 'Egb6','EVLITE_p', 'E_Total_flux']
         gleam_freq = [76, 84, 92, 99, 107, 115, 122, 130, 143, 151, 158, 166,
                       174, 181, 189, 197, 204, 212, 220, 227]  # MHz
         self.gleam_f_cols = []
         self.gleam_ferr_cols = []
-        self.cat_names = ['NVSS', 'SUMSS', 'Texas', 'TGSS', 'VLSSr', 'WENSS',
-                          'WISH', 'GB6', 'VLITE']
+        self.cat_names = ['NVSS', 'FIRST', 'SUMSS', 'TGSS', 'VLSSr', 'WENSS',
+                          'WISH', 'GB6', 'VLITE', 'VLASS']
         self.oir_fcols = ['FWISE1', 'FWISE2', 'FWISE3', 'FWISE4', 'F70', 'F170',
                           'F250', 'F350', 'F500']
         self.oir_ecols = ['EWISE1', 'EWISE2', 'EWISE3', 'EWISE4', 'E70', 'E170',
@@ -111,7 +114,14 @@ class FilePrepUtils:
         # modifying Data prep to add VLITE data point
 
     def data_prep(self, wisen, glmcat, scat, jvla_AX, jvla_BX):
-
+        path_tab = '/Users/ppatil/Desktop/VLA/Radio_Fits_v2/New_Analysis/'
+        final_comptab = Table.read(path_tab+'final_tab_new_jvla.csv')
+        final_comptab.add_index('Source_name')
+        
+        vcss_cat = Table.read(config.VLITE_FILE)
+        vcss_cat.add_index('WISEname')
+        racs_cat = Table.read(config.RACS_FILE)
+        racs_cat.add_index('WISEname')
         # These array are for the radio fitting routine:
         flux_arr = []
         freq_arr = []
@@ -168,6 +178,9 @@ class FilePrepUtils:
             if fcol == 'Fvlssr':
                 flux = flux * 1000
                 ferr = ferr * 1000
+            if fcol == 'Total_flux': # VLASS
+                flux = flux*1000
+                ferr = flux*0.2
 
             arx_fluxes.append(flux)
             arx_errors.append(ferr)
@@ -227,7 +240,7 @@ class FilePrepUtils:
         OIR = [freq_OIR, flux_OIR, eflux_OIR]
 
         for fcol, ecol, nu in zip(r_cols, e_cols, rad_frq):
-            if mir_row[fcol] > 0:
+            if mir_row[fcol] > 0 and isinstance(mir_row[ecol], float):
                 rarx_flux.append(mir_row[fcol])
                 rarx_ferr.append(mir_row[ecol])
                 rarx_freq.append(nu)
@@ -257,6 +270,13 @@ class FilePrepUtils:
         if FAX_10GHZ > 0 and len(jvla_AX) == 1:
             [spidx, spidx_e] = self.check_Spindex(jvla_AX)
             nu_0 = 10
+            if spidx>-999:
+                source = jvla_AX['Source_name']
+                finalt = final_comptab.loc[source]
+                if len(finalt)<5:
+                    finalt = finalt[finalt['regionAX']=='reg1']
+                spidx = finalt['alIB_AX']
+                spidx_e = finalt['alIB_err_AX']
             alpha_AX = [-nu_0, spidx, spidx_e]
         if FBX_10GHZ > 0:
             flux_arr.append(FBX_10GHZ)
@@ -266,6 +286,13 @@ class FilePrepUtils:
         if FBX_10GHZ > 0 and len(jvla_BX) == 1:
             [spidx, spidx_e] = self.check_Spindex(jvla_BX)
             nu_0 = 10
+            if spidx>-999:
+                source = jvla_BX['Source_name']
+                finalt = final_comptab.loc[source]
+                if len(finalt)<5:
+                    finalt = finalt[finalt['regionBX']=='reg1']
+                spidx = finalt['alIB_BX']
+                spidx_e = finalt['alIB_err_BX']
             alpha_BX = [-nu_0, spidx, spidx_e]
 
         flux_arr = np.array(flux_arr)
@@ -282,6 +309,52 @@ class FilePrepUtils:
         flux_arr = np.delete(flux_arr, int_arr)
         eflux_arr = np.delete(eflux_arr, int_arr)
         sp_flux = [FAX_10GHZ, EAX_10GHZ, FBX_10GHZ, EBX_10GHZ, fgl, egl]
-
+    
+        '''
+        Change made on Feb 10 2021: Adding VCSS Catalog)
+        '''
+        #Remove the Older VLITE data and add new one from VCSS
+        if 'VLITE' in labels:
+            myind = labels.index('VLITE')
+            freq_arr = np.delete(freq_arr, myind)
+            flux_arr = np.delete(flux_arr, myind)
+            eflux_arr = np.delete(eflux_arr, myind)
+            labels = np.delete(labels, myind)
+        
+        
+        try:
+            vcss_row = vcss_cat.loc[wisen]
+            #cmpt = vcss_row['compactness']
+            #if cmpt<0.8:
+            #    col = 'total_flux_1'
+            #else: col = 'peak_flux_1'
+            col = 'total_flux'
+            vcss_flux = vcss_row[col]
+            vcss_eflux = vcss_row['e_'+col]
+            flux_arr = np.append(flux_arr, vcss_flux)
+            eflux_arr = np.append(eflux_arr, vcss_eflux)
+            freq_arr = np.append(freq_arr, 0.338)
+            labels = np.append(labels, 'VLITE')
+        except:
+            pass
+        
+        #Read RACS info
+        try:
+            racs_row = racs_cat.loc[wisen]
+            #cmpt = vcss_row['compactness']
+            #if cmpt<0.8:
+            #    col = 'total_flux_1'
+            #else: col = 'peak_flux_1'
+            col = 'total_flux_source'
+            racs_flux = racs_row[col]
+            racs_eflux = racs_row['e_'+col]
+            flux_arr = np.append(flux_arr, racs_flux)
+            eflux_arr = np.append(eflux_arr, racs_eflux)
+            freq_arr = np.append(freq_arr, 0.887)
+            labels = np.append(labels, 'RACS')
+        except:
+            pass
+            
+        
         return freq_arr, flux_arr, eflux_arr, alpha_AX, alpha_BX, alpha_GL, [
-            FALMA, EALMA], OIR, sp_flux, labels
+            FALMA, EALMA], OIR, sp_flux, list(labels)

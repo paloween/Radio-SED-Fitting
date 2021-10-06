@@ -8,28 +8,144 @@ Created on Mon Sep  9 15:37:12 2019
 
 import numpy as np
 import pandas as pd
-import os
-import sys
-sys.path.insert(1,'../Radio-SED-Fitting')
-import json
-import dquants
-
 from astropy.table import Table, join, Column
 from astropy.io import fits
-
-
+import os
+import errors_mcsim as emcsim
+import sys
+sys.path.insert(1,'../Radio-SED-Fitting')
 import Radio_Models_func
 import file_prep_radio_fitting 
 import fitting_mcsim_func as mcsim_fit
-import errors_mcsim as emcsim
-import SED_cleanup_utils 
+import json
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+import dquants
 
+def edit_fits_header(fitsfile):
+    hdu = fits.open(fitsfile)
+    hdr = hdu[0].header
+    mydata= hdu[0].data
+    survey = os.path.basename(fitsfile).split('_')[1].split('.')[0]
+    keywords = ['CTYPE3','CRVAL3','CDELT3', 'CRPIX3', 'CROTA3','CUNIT3',
+                'CTYPE4','CRVAL4','CDELT4', 'CRPIX4', 'CROTA4','CUNIT4',
+                'PC3_1', 'PC4_1', 'PC3_2','PC4_2', 'PC1_3','PC2_3','PC3_3',
+                'PC4_3','PC1_4','PC2_4','PC3_4','PC4_4']
+    for key in keywords:
+        hdr.remove(key, ignore_missing=True)
+    if survey =='NVSS' or 'VLASS':
+        hdr.remove('NAXIS3',ignore_missing=True )
+        hdr.remove('NAXIS4',ignore_missing=True )
+        hdr['NAXIS'] = 2
+    if len(mydata.shape)>2:
+        mydata = mydata[0,0,:,:]
+    new_fits = fits.PrimaryHDU(data=mydata, header=hdr)
+    hdu.close()
+    return new_fits
+    
+    
+def get_faint_detection(source, survey, fitsf, pos, reg_pix = 10):
+    if os.path.exists(fitsf):
+        hdu = edit_fits_header(fitsf)
+        data = hdu.data
+        head = hdu.header
+        wcs = WCS(head)
+        xcen, ycen = wcs.world_to_pixel(pos)
+        xlow = int(xcen-reg_pix/2)
+        ylow = int(ycen-reg_pix/2)
+        xupp = int(xcen+reg_pix/2)
+        yupp = int(ycen+reg_pix/2)
+        dslice = data[xlow:xupp, ylow:yupp]
+        maxflux = np.max(dslice)
+        # calculate rms:
+        #data_clip = abs(np.nanpercentile(data, 0.001))
+        #data_rms = np.nanstd(data[data<data_clip])
+        rms = head['ACTNOISE']
+        return maxflux*1000, rms*1000
+    else:
+        return -999, -999
+    
+    
+def get_VCSS_data(source, wise_row, sp_row, labels, freq_arr, flux_arr, eflux_arr):
+    vlite_sources = {'J1238+52':17,  'J0823-06':16.2, 'J0642-27':20 }
+
+    if 'VLITE' in labels:
+        my_ind = labels.index('VLITE')
+        if eflux_arr[my_ind]/flux_arr[my_ind] <0.2:
+            eflux_arr[my_ind] = np.sqrt((0.2*flux_arr[my_ind])**2+eflux_arr[my_ind]**2)
+            
+    else:
+        if sp_row['VLITE_Limit'] == 'F':
+            mypos = SkyCoord(ra=wise_row['wise_ra_1'], dec = wise_row['wise_dec_1'], 
+                             unit = (u.deg, u.deg), frame='fk5')
+            fitsf = './Astroquery/VCSS/cutouts/'+source+'_VCSS1_cutout_v1.fits'
+            flux, rms = get_faint_detection(source, 'VLITE', fitsf, mypos, 
+                                            reg_pix = 10)
+            eflux = np.sqrt(0.2*flux**2+rms**2)
+            freq_arr = np.append(freq_arr, 0.338)
+            flux_arr = np.append(flux_arr, flux)
+            eflux_arr = np.append(eflux_arr, eflux)
+            labels.append('VLITE')
+        elif wise_row['VLITE_Limit']>0:
+            ul_limit = 10/2
+            flux = ul_limit*wise_row['VLITE_Limit']
+            eflux = ul_limit*wise_row['VLITE_Limit']           
+            freq_arr = np.append(freq_arr, 0.338)
+            flux_arr = np.append(flux_arr, flux)
+            eflux_arr = np.append(eflux_arr, eflux)
+            labels.append('VLITE')
+ 
+    #add VLITE data:
+    if source in list(vlite_sources.keys()):
+        freq_arr = np.append(freq_arr, 0.338)
+        flux_arr = np.append(flux_arr, vlite_sources[source])
+        eflux_arr = np.append(eflux_arr, vlite_sources[source]*0.2)
+        labels.append('VLITE')
+    return freq_arr, flux_arr, eflux_arr, labels
+
+def VCSS_data_cleanup(source, wise_row, sp_row, labels, freq_arr, flux_arr, eflux_arr):
+    
+    if 'VLITE' in labels:
+        my_ind = labels.index('VLITE')
+        fitsf = './Astroquery/VCSS/cutouts/'+source+'_VCSS1_cutout_v1.fits'
+        header = fits.open(fitsf)[0].header
+        snr = flux_arr[my_ind]/header['ACTNOISE']/1000
+        if snr<10 or source == 'J0526-32':
+            freq_arr = np.delete(freq_arr, my_ind)
+            flux_arr = np.delete(flux_arr, my_ind)
+            eflux_arr = np.delete(eflux_arr, my_ind)
+            labels.remove('VLITE')
+        else:
+            #adding offset to the VCSS fluxes:
+            offset = 1.075
+            flux_arr[my_ind] = offset*flux_arr[my_ind]
+            eflux_arr[my_ind] = offset*flux_arr[my_ind]
+            
+    return freq_arr, flux_arr, eflux_arr, labels
+ 
+def mod_data_flux_density_scale(fluxes, efluxes, labels ):
+    '''
+    Recommendations by the referee:
+        RACS and NVSS: add a measurement uncertainity of 5% in quadrature. 
+        Add LOTSS-DR1
+        WENSS reduce flux by 10%
+        TGSS - increase the errors  by 10%
+    '''
+    for ii, label in enumerate(labels):
+        if label not in [ 'VLASS', 'WENSS']:
+            efluxes[ii] = np.sqrt(efluxes[ii]**2 + (0.05*fluxes[ii])**2)
+        if label in ['WENSS']:
+            fluxes[ii] = 0.81*fluxes[ii]
+            efluxes[ii] = 0.81*efluxes[ii] 
+            efluxes[ii] = np.sqrt(efluxes[ii]**2 + (0.05*fluxes[ii])**2)
+        
+    return fluxes, efluxes, labels
 
 
 loadt = file_prep_radio_fitting.LoadTables()
 fprep = file_prep_radio_fitting.FilePrepUtils()
 rmfit = Radio_Models_func.RadioModelFit()
-sedutils = SED_cleanup_utils.SED_cleanup_utils()
 
 ##Accessing all different data files and creating astropy tables.
 
@@ -126,10 +242,10 @@ for wise_row in wise_phot:
     #get VCSS data
     #freq_arr, flux_arr, eflux_arr, labels = get_VCSS_data(sname, wise_row,
     #                         sp_row, labels, freq_arr, flux_arr, eflux_arr)
-    freq_arr, flux_arr, eflux_arr, labels = sedutils.VCSS_data_cleanup(sname, wise_row,
+    freq_arr, flux_arr, eflux_arr, labels = VCSS_data_cleanup(sname, wise_row,
                             sp_row, labels, freq_arr, flux_arr, eflux_arr)
     
-    flux_arr, eflux_arr, labels = sedutils.mod_data_flux_density_scale(flux_arr, eflux_arr, 
+    flux_arr, eflux_arr, labels = mod_data_flux_density_scale(flux_arr, eflux_arr, 
                                                               labels)
     
     if 'VLASS' in labels and sp_row['VLASS_Limit']!='U':
